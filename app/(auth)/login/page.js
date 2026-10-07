@@ -53,6 +53,7 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="text-[11px] text-slate-400 mt-4 text-center">
+          Démo admin : demo@lingepro.fr / Demo123!
         </p>
       </div>
     </div>

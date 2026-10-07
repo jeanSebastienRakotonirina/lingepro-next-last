@@ -35,6 +35,7 @@ export default function DeliveriesPage() {
         clientName: edit.clientName,
         address: { street: edit.street || '', postalCode: edit.postalCode || '', city: edit.city || '' },
         scheduledDate: edit.scheduledDate || undefined,
+        items: edit.items || [],
       }),
     });
     setEdit(null);
@@ -128,6 +129,30 @@ export default function DeliveriesPage() {
             <div>
               <label className="label">Date planifiée</label>
               <input className="input" type="datetime-local" value={edit.scheduledDate} onChange={(e) => setEdit({ ...edit, scheduledDate: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Quantités (modifiables)</label>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {(edit.items || []).map((it, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-xs">
+                    <span className="flex-1 truncate">{it.name}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      className="input w-20"
+                      value={it.qty ?? 0}
+                      onChange={(e) => {
+                        const items = [...(edit.items || [])];
+                        items[idx] = { ...it, qty: e.target.value };
+                        setEdit({ ...edit, items });
+                      }}
+                    />
+                    <span className="text-slate-400 w-10">{it.unit === 'kg' ? 'kg' : 'pce'}</span>
+                  </div>
+                ))}
+                {!(edit.items || []).length && <p className="text-slate-400 text-xs">Aucune ligne</p>}
+              </div>
             </div>
             <div>
               <label className="label">Notes</label>

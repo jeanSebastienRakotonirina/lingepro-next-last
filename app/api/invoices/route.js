@@ -31,6 +31,8 @@ export async function PATCH(req) {
     if (body.totalTTC !== undefined) inv.totalTTC = Number(body.totalTTC);
     if (body.clientName !== undefined) inv.clientName = body.clientName;
     if (body.address) inv.address = body.address;
+    if (body.paymentStatus) inv.paymentStatus = body.paymentStatus;
+    if (Array.isArray(body.items)) inv.items = body.items;
     await inv.save();
     return NextResponse.json({ invoice: inv });
   }

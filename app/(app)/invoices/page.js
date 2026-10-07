@@ -52,7 +52,9 @@ export default function InvoicesPage() {
         totalTVA: edit.totalTVA,
         totalTTC: edit.totalTTC,
         clientName: edit.clientName,
+        paymentStatus: edit.paymentStatus,
         address: { street: edit.street || '', postalCode: edit.postalCode || '', city: edit.city || '' },
+        items: edit.items || [],
       }),
     });
     setEdit(null);
@@ -178,6 +180,41 @@ export default function InvoicesPage() {
                 <option value="paid">Payée</option>
                 <option value="cancelled">Annulée</option>
               </select>
+            </div>
+            <div>
+              <label className="label">Paiement</label>
+              <select className="input" value={edit.paymentStatus || 'unpaid'} onChange={(e) => setEdit({ ...edit, paymentStatus: e.target.value })}>
+                <option value="unpaid">Impayé</option>
+                <option value="pending">En cours</option>
+                <option value="paid">Payé</option>
+                <option value="refunded">Remboursé</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Lignes (qté / P.U. modifiables)</label>
+              <div className="space-y-1 max-h-36 overflow-y-auto text-xs">
+                {(edit.items || []).map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_4rem_4rem] gap-1 items-center">
+                    <span className="truncate">{it.name}</span>
+                    <input type="number" className="input" value={it.qty ?? 0} onChange={(e) => {
+                      const items = [...(edit.items || [])];
+                      const qty = Number(e.target.value) || 0;
+                      const unitPrice = Number(it.unitPrice) || 0;
+                      const lineHT = Math.round(qty * unitPrice * 100) / 100;
+                      items[idx] = { ...it, qty, lineHT, lineTVA: Math.round(lineHT * 0.2 * 100) / 100, lineTTC: Math.round(lineHT * 1.2 * 100) / 100 };
+                      setEdit({ ...edit, items });
+                    }} />
+                    <input type="number" step="0.01" className="input" value={it.unitPrice ?? 0} onChange={(e) => {
+                      const items = [...(edit.items || [])];
+                      const unitPrice = Number(e.target.value) || 0;
+                      const qty = Number(it.qty) || 0;
+                      const lineHT = Math.round(qty * unitPrice * 100) / 100;
+                      items[idx] = { ...it, unitPrice, lineHT, lineTVA: Math.round(lineHT * 0.2 * 100) / 100, lineTTC: Math.round(lineHT * 1.2 * 100) / 100 };
+                      setEdit({ ...edit, items });
+                    }} />
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>

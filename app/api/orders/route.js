@@ -226,6 +226,38 @@ export async function PATCH(req) {
     return NextResponse.json({ order: publicOrder(order, session) });
   }
 
+  
+  // Admin : édition complète (tous champs + quantités demandées)
+  if (body.action === 'admin_full_edit') {
+    if (!isAdmin(session)) return NextResponse.json({ error: 'Admin uniquement' }, { status: 403 });
+    if (body.status) order.status = body.status;
+    if (body.notes !== undefined) order.notes = body.notes;
+    if (body.clientName !== undefined) order.clientName = body.clientName;
+    if (body.orderMode) order.orderMode = body.orderMode;
+    if (body.express !== undefined) order.express = !!body.express;
+    if (body.promoCode !== undefined) order.promoCode = body.promoCode;
+    if (body.pickupDate) order.pickupDate = new Date(body.pickupDate);
+    if (body.deliveryAddress) {
+      order.deliveryAddress = {
+        street: body.deliveryAddress.street || '',
+        postalCode: body.deliveryAddress.postalCode || '',
+        city: body.deliveryAddress.city || '',
+      };
+    }
+    if (Array.isArray(body.requestedItems) && body.requestedItems.length) {
+      order.requestedItems = body.requestedItems.map((it) => ({
+        sku: it.sku,
+        name: it.name,
+        category: it.category,
+        machineHint: it.machineHint,
+        unit: it.unit || 'piece',
+        requestedQty: Number(it.requestedQty) || 0,
+      }));
+    }
+    await order.save();
+    return NextResponse.json({ order: publicOrder(order, session) });
+  }
+
   // Admin / staff : édition de tous les champs simples
   if (isAdmin(session) || isStaff(session)) {
     if (body.status) order.status = body.status;

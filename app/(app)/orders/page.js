@@ -26,6 +26,14 @@ export default function OrdersPage() {
 
   async function saveEdit(e) {
     e.preventDefault();
+    const requestedItems = (edit.requestedItems || []).map((it) => ({
+      sku: it.sku,
+      name: it.name,
+      category: it.category,
+      machineHint: it.machineHint,
+      unit: it.unit || 'piece',
+      requestedQty: Number(it.requestedQty) || 0,
+    }));
     await fetch('/api/orders', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -34,12 +42,17 @@ export default function OrdersPage() {
         status: edit.status,
         notes: edit.notes,
         clientName: edit.clientName,
+        orderMode: edit.orderMode,
+        express: !!edit.express,
+        promoCode: edit.promoCode || '',
         deliveryAddress: {
           street: edit.street || '',
           postalCode: edit.postalCode || '',
           city: edit.city || '',
         },
         pickupDate: edit.pickupDate || undefined,
+        requestedItems,
+        action: 'admin_full_edit',
       }),
     });
     setEdit(null);
@@ -98,7 +111,12 @@ export default function OrdersPage() {
             </div>
             <ul className="text-sm text-slate-600 mt-2">
               {(o.requestedItems || []).map((i, idx) => (
-                <li key={idx}>• {i.name}</li>
+                <li key={idx}>
+                  • {i.name}
+                  {Number(i.requestedQty) > 0 && (
+                    <span className="text-brand-700 font-medium"> × {i.requestedQty}</span>
+                  )}
+                </li>
               ))}
             </ul>
             <div className="flex flex-wrap gap-2 mt-3">
@@ -175,6 +193,42 @@ export default function OrdersPage() {
             <div>
               <label className="label">Date livraison</label>
               <input className="input" type="datetime-local" value={edit.pickupDate} onChange={(e) => setEdit({ ...edit, pickupDate: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Mode</label>
+              <select className="input" value={edit.orderMode || 'checkbox'} onChange={(e) => setEdit({ ...edit, orderMode: e.target.value })}>
+                <option value="checkbox">Cases à cocher</option>
+                <option value="quantities">Avec quantités</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={!!edit.express} onChange={(e) => setEdit({ ...edit, express: e.target.checked })} />
+              Express
+            </label>
+            <div>
+              <label className="label">Code promo</label>
+              <input className="input" value={edit.promoCode || ''} onChange={(e) => setEdit({ ...edit, promoCode: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Quantités demandées (modifiables)</label>
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {(edit.requestedItems || []).map((it, idx) => (
+                  <div key={it.sku || idx} className="flex items-center gap-2 text-xs">
+                    <span className="flex-1 truncate">{it.name}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input w-20"
+                      value={it.requestedQty || 0}
+                      onChange={(e) => {
+                        const requestedItems = [...(edit.requestedItems || [])];
+                        requestedItems[idx] = { ...it, requestedQty: e.target.value };
+                        setEdit({ ...edit, requestedItems });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
             <div>
               <label className="label">Notes</label>

@@ -1,10 +1,8 @@
 import './globals.css';
-import { Analytics } from '@vercel/analytics/next';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 export const metadata = {
-  icons: {
-    icon: '/favicon.png',
-  },
   title: "Text'eau — Le nettoyage nature",
   description: 'Gestion de blanchisserie professionnelle',
 };
@@ -15,7 +13,8 @@ export default function RootLayout({ children }) {
       <body>
         {children}
         <Analytics />
-      </body>
+        <SpeedInsights />
+        </body>
     </html>
   );
 }

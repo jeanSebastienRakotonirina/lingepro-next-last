@@ -35,7 +35,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState('todo');
-  const [form, setForm] = useState(null);
+  const [form, setForm] = useState(null); // { orderId, orderNumber, qty: {}, washKg, dryKg }
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [user, setUser] = useState(null);
@@ -67,6 +67,11 @@ export default function TasksPage() {
         label: editTask.label,
         status: editTask.status,
         notes: editTask.notes,
+        type: editTask.type,
+        inputUnit: editTask.inputUnit,
+        clientName: editTask.clientName,
+        orderNumber: editTask.orderNumber,
+        dueDate: editTask.dueDate || null,
       }),
     });
     setEditTask(null);
@@ -78,22 +83,38 @@ export default function TasksPage() {
     openPrintWindow(buildTaskSheetHtml(o, related), 'Atelier ' + o.number);
   }
 
-  function openSaisie(orderId, orderNumber, requestedItems) {
+  function openSaisie(orderId, orderNumber, requestedItems, order) {
     const qty = {};
     PIECE_CATALOG.forEach((c) => { qty[c.sku] = 0; });
+    // Préremplir avec les quantités indiquées à la commande (modifiables)
     (requestedItems || []).forEach((i) => {
-      if (qty[i.sku] !== undefined) qty[i.sku] = 0;
+      const q = Number(i.requestedQty) || 0;
+      if (i.sku && qty[i.sku] !== undefined) qty[i.sku] = q;
+      else if (i.sku) qty[i.sku] = q;
+    });
+    // Si quantités déjà traitées, les proposer en base
+    (order?.processedItems || []).forEach((i) => {
+      if (i.unit === 'piece' && i.sku && (Number(i.qty) || 0) > 0) {
+        qty[i.sku] = Number(i.qty);
+      }
+    });
+    let washKg = '';
+    let dryKg = '';
+    (order?.processedItems || []).forEach((i) => {
+      if (i.unit === 'kg' && (i.machineType === 'lave_linge' || i.sku === 'WASH-KG')) washKg = String(i.qty || '');
+      if (i.unit === 'kg' && (i.machineType === 'sechoir' || i.sku === 'DRY-KG')) dryKg = String(i.qty || '');
     });
     setForm({
       orderId,
       orderNumber,
       qty,
-      washKg: '',
-      dryKg: '',
+      washKg,
+      dryKg,
       machineWash: 'L80',
       machineDry: 'S80',
       machineFold: 'FOLTEXT',
       machineIron: 'GIRBAU',
+      indicated: (requestedItems || []).filter((i) => Number(i.requestedQty) > 0),
     });
     setMsg('');
   }
@@ -119,22 +140,10 @@ export default function TasksPage() {
         }));
       const kgEntries = [];
       if (Number(form.washKg) > 0) {
-        kgEntries.push({
-          name: 'Lavage',
-          qty: Number(form.washKg),
-          machine: form.machineWash,
-          machineType: 'lave_linge',
-          sku: 'WASH-KG',
-        });
+        kgEntries.push({ name: 'Lavage', qty: Number(form.washKg), machine: form.machineWash, machineType: 'lave_linge', sku: 'WASH-KG' });
       }
       if (Number(form.dryKg) > 0) {
-        kgEntries.push({
-          name: 'Séchage',
-          qty: Number(form.dryKg),
-          machine: form.machineDry,
-          machineType: 'sechoir',
-          sku: 'DRY-KG',
-        });
+        kgEntries.push({ name: 'Séchage', qty: Number(form.dryKg), machine: form.machineDry, machineType: 'sechoir', sku: 'DRY-KG' });
       }
       const res = await fetch('/api/orders', {
         method: 'PATCH',
@@ -170,42 +179,44 @@ export default function TasksPage() {
       alert(data.error || 'Erreur');
       return;
     }
-    setMsg(data.message || 'Livré');
+    alert(data.message || `BL ${data.deliveryNumber} · Facture ${data.invoiceNumber || ''}`);
     load();
   }
 
   const filtered = tasks.filter((t) => (filter === 'all' ? true : t.status === filter));
-  const pendingOrders = orders.filter((o) =>
-    ['pending', 'in_progress', 'quantities_recorded'].includes(o.status)
-  );
+  const pendingOrders = orders.filter((o) => ['pending', 'in_progress', 'quantities_recorded'].includes(o.status));
 
   return (
     <div>
       <h1 className="text-xl font-bold mb-1">Tâches atelier</h1>
       <p className="text-sm text-slate-500 mb-4">
-        Saisissez les quantités traitées : <strong>pièces</strong> (Foltext / calandres) et{' '}
-        <strong>kg</strong> (lave-linge / séchoirs). Puis marquez livré pour générer BL + facture.
+        Saisissez les quantités traitées : <strong>pièces</strong> (Foltext / calandres) et <strong>kg</strong> (lave-linge / séchoirs).
+        Puis marquez livré pour générer BL + facture.
       </p>
-      {msg && (
-        <div className="mb-3 rounded-xl bg-brand-50 text-brand-800 text-sm px-3 py-2">{msg}</div>
-      )}
+      {msg && <div className="mb-3 rounded-xl bg-brand-50 text-brand-800 text-sm px-3 py-2">{msg}</div>}
 
       <h2 className="font-semibold text-sm mb-2">Commandes à traiter</h2>
       <div className="space-y-2 mb-6">
         {pendingOrders.map((o) => (
           <div key={o._id} className="card">
-            <div className="font-medium text-sm">
-              {o.number} — {o.clientName}
-            </div>
+            <div className="font-medium text-sm">{o.number} — {o.clientName}</div>
             <div className="text-xs text-slate-500 mb-2">
               {(o.requestedItems || []).map((i) => i.name).join(', ') || '—'} · statut : {o.status}
+              {o.orderMode === 'quantities' && ' · mode quantités'}
             </div>
+            {(o.requestedItems || []).some((i) => Number(i.requestedQty) > 0) && (
+              <div className="text-xs bg-slate-50 rounded-lg p-2 mb-2 text-slate-700">
+                <span className="font-medium">Quantités indiquées : </span>
+                {(o.requestedItems || [])
+                  .filter((i) => Number(i.requestedQty) > 0)
+                  .map((i) => `${i.name} × ${i.requestedQty}`)
+                  .join(' · ')}
+              </div>
+            )}
             <div className="text-xs text-brand-700 mb-2">
-              Atelier :{' '}
-              {o.taskDueDate ? new Date(o.taskDueDate).toLocaleDateString('fr-FR') : '—'} (veille)
+              Atelier : {o.taskDueDate ? new Date(o.taskDueDate).toLocaleDateString('fr-FR') : '—'} (veille)
               {' · '}
-              Livraison :{' '}
-              {o.pickupDate ? new Date(o.pickupDate).toLocaleDateString('fr-FR') : '—'} (lendemain)
+              Livraison : {o.pickupDate ? new Date(o.pickupDate).toLocaleDateString('fr-FR') : '—'} (lendemain)
             </div>
             <div className="flex flex-wrap gap-2">
               {o.status !== 'quantities_recorded' && o.status !== 'delivered' && (
@@ -213,25 +224,17 @@ export default function TasksPage() {
                   <button
                     type="button"
                     className="btn-primary text-xs"
-                    onClick={() => openSaisie(o._id, o.number, o.requestedItems)}
+                    onClick={() => openSaisie(o._id, o.number, o.requestedItems, o)}
                   >
                     Saisir quantités
                   </button>
-                  <button
-                    type="button"
-                    className="btn-secondary text-xs"
-                    onClick={() => printTaskSheet(o)}
-                  >
+                  <button type="button" className="btn-secondary text-xs" onClick={() => printTaskSheet(o)}>
                     PDF atelier
                   </button>
                 </>
               )}
               {o.status === 'quantities_recorded' && (
-                <button
-                  type="button"
-                  className="btn-primary text-xs"
-                  onClick={() => deliver(o._id)}
-                >
+                <button type="button" className="btn-primary text-xs" onClick={() => deliver(o._id)}>
                   Marquer livré → BL + Facture
                 </button>
               )}
@@ -243,185 +246,182 @@ export default function TasksPage() {
             </div>
           </div>
         ))}
-        {pendingOrders.length === 0 && (
-          <p className="text-slate-400 text-sm">Aucune commande en cours</p>
-        )}
+        {pendingOrders.length === 0 && <p className="text-slate-400 text-sm">Aucune commande en attente</p>}
       </div>
 
-      <div className="flex gap-2 mb-3">
+      <div className="flex gap-2 mb-3 flex-wrap">
         {['todo', 'doing', 'done', 'all'].map((f) => (
           <button
             key={f}
             type="button"
-            className={`text-xs px-3 py-1.5 rounded-lg border ${
-              filter === f ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-slate-200'
-            }`}
             onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium ${filter === f ? 'bg-brand-600 text-white' : 'bg-white border border-slate-200'}`}
           >
             {f === 'todo' ? 'À faire' : f === 'doing' ? 'En cours' : f === 'done' ? 'Terminées' : 'Toutes'}
           </button>
         ))}
       </div>
-
       <div className="space-y-2">
         {filtered.map((t) => (
           <div key={t._id} className="card text-sm">
-            <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-xs mr-2">
-              {TYPE_LABEL[t.type] || t.type}
-            </span>
+            <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-xs mr-2">{TYPE_LABEL[t.type] || t.type}</span>
             {t.label}
             <div className="text-xs text-slate-400 mt-1">
               {t.clientName} · {t.status}
-              {t.dueDate && (
-                <>
-                  {' '}
-                  · À faire le{' '}
-                  <strong>{new Date(t.dueDate).toLocaleDateString('fr-FR')}</strong> (veille)
-                </>
-              )}
+              {t.dueDate && <> · À faire le <strong>{new Date(t.dueDate).toLocaleDateString('fr-FR')}</strong> (veille)</>}
             </div>
-            {user?.role === 'admin' && (
+            {(user?.role === 'admin' || user?.role === 'operateur') && (
               <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  className="btn-primary text-xs"
-                  onClick={() => setEditTask({ ...t })}
-                >
-                  Éditer
-                </button>
-                <button
-                  type="button"
-                  className="btn-danger text-xs"
-                  onClick={() => removeTask(t._id)}
-                >
-                  Supprimer
-                </button>
+                <button type="button" className="btn-primary text-xs" onClick={() => setEditTask({ ...t })}>Éditer</button>
+                {user?.role === 'admin' && (
+                  <button type="button" className="btn-danger text-xs" onClick={() => removeTask(t._id)}>Supprimer</button>
+                )}
               </div>
             )}
           </div>
         ))}
       </div>
 
+      {/* Modal saisie quantités */}
       {form && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
-          <form
-            onSubmit={submitSaisie}
-            className="card w-full max-w-lg space-y-3 max-h-[90vh] overflow-y-auto"
-          >
-            <h2 className="font-bold">Saisie quantités — {form.orderNumber}</h2>
-            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-              {PIECE_CATALOG.map((c) => (
-                <div key={c.sku} className="flex items-center gap-2 text-xs">
-                  <span className="flex-1 truncate">{c.name}</span>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-xl">
+            <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center">
+              <h2 className="font-bold text-sm">Saisie — {form.orderNumber}</h2>
+              {form.indicated?.length > 0 && (
+                <div className="text-xs rounded-lg bg-amber-50 text-amber-900 p-2 border border-amber-100">
+                  <strong>Indiquées à la commande (modifiables) :</strong>{' '}
+                  {form.indicated.map((i) => `${i.name} × ${i.requestedQty}`).join(' · ')}
+                </div>
+              )}
+              <p className="text-xs text-slate-500">Ajustez les quantités réelles traitées puis enregistrez.</p>
+              <button type="button" className="text-xl px-2" onClick={() => setForm(null)}>×</button>
+            </div>
+            <form onSubmit={submitSaisie} className="p-4 space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Pièces (Foltext / calandres)</h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {PIECE_CATALOG.map((c) => (
+                    <div key={c.sku} className="flex items-center gap-2">
+                      <div className="flex-1 text-sm truncate">{c.name}</div>
+                      <button type="button" className="w-8 h-8 border rounded-lg" onClick={() => setQ(c.sku, (form.qty[c.sku] || 0) - 1)}>−</button>
+                      <input
+                        type="number"
+                        min={0}
+                        className="w-14 text-center input py-1 px-0"
+                        value={form.qty[c.sku] || 0}
+                        onChange={(e) => setQ(c.sku, parseInt(e.target.value, 10) || 0)}
+                      />
+                      <button type="button" className="w-8 h-8 border rounded-lg" onClick={() => setQ(c.sku, (form.qty[c.sku] || 0) + 1)}>+</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Lavage (kg)</label>
                   <input
                     type="number"
-                    min="0"
-                    className="input w-16 text-xs"
-                    value={form.qty[c.sku] || 0}
-                    onChange={(e) => setQ(c.sku, parseInt(e.target.value, 10) || 0)}
+                    min={0}
+                    step={0.1}
+                    className="input"
+                    value={form.washKg}
+                    onChange={(e) => setForm({ ...form, washKg: e.target.value })}
+                    placeholder="0"
                   />
+                  <select className="input mt-1 text-xs" value={form.machineWash} onChange={(e) => setForm({ ...form, machineWash: e.target.value })}>
+                    <option value="L80">Lave-linge 80 kg</option>
+                    <option value="L60-1">Lave-linge 60 kg #1</option>
+                    <option value="L60-2">Lave-linge 60 kg #2</option>
+                    <option value="L60-3">Lave-linge 60 kg #3</option>
+                    <option value="L45">Lave-linge 45 kg</option>
+                  </select>
                 </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Lavage (kg)</label>
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={form.washKg}
-                  onChange={(e) => setForm({ ...form, washKg: e.target.value })}
-                  placeholder="0"
-                />
-                <select
-                  className="input mt-1 text-xs"
-                  value={form.machineWash}
-                  onChange={(e) => setForm({ ...form, machineWash: e.target.value })}
-                >
-                  <option value="L80">Lave-linge 80 kg</option>
-                  <option value="L60-1">Lave-linge 60 kg #1</option>
-                  <option value="L60-2">Lave-linge 60 kg #2</option>
-                  <option value="L60-3">Lave-linge 60 kg #3</option>
-                  <option value="L45">Lave-linge 45 kg</option>
-                </select>
+                <div>
+                  <label className="label">Séchage (kg)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    className="input"
+                    value={form.dryKg}
+                    onChange={(e) => setForm({ ...form, dryKg: e.target.value })}
+                    placeholder="0"
+                  />
+                  <select className="input mt-1 text-xs" value={form.machineDry} onChange={(e) => setForm({ ...form, machineDry: e.target.value })}>
+                    <option value="S80">Séchoir 80 kg</option>
+                    <option value="S60-1">Séchoir 60 kg #1</option>
+                    <option value="S60-2">Séchoir 60 kg #2</option>
+                    <option value="S42">Séchoir 42 kg</option>
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="label">Séchage (kg)</label>
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={form.dryKg}
-                  onChange={(e) => setForm({ ...form, dryKg: e.target.value })}
-                  placeholder="0"
-                />
-                <select
-                  className="input mt-1 text-xs"
-                  value={form.machineDry}
-                  onChange={(e) => setForm({ ...form, machineDry: e.target.value })}
-                >
-                  <option value="S80">Séchoir 80 kg</option>
-                  <option value="S60-1">Séchoir 60 kg #1</option>
-                  <option value="S60-2">Séchoir 60 kg #2</option>
-                  <option value="S42">Séchoir 42 kg</option>
-                </select>
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary flex-1" onClick={() => setForm(null)}>Annuler</button>
+                <button type="submit" className="btn-primary flex-1" disabled={saving}>{saving ? '…' : 'Enregistrer quantités'}</button>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" className="btn-secondary flex-1" onClick={() => setForm(null)}>
-                Annuler
-              </button>
-              <button type="submit" className="btn-primary flex-1" disabled={saving}>
-                {saving ? '…' : 'Enregistrer quantités'}
-              </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
       {editTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={saveTask} className="card w-full max-w-md space-y-3">
+          <form onSubmit={saveTask} className="card w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
             <h2 className="font-bold">Éditer la tâche</h2>
             <div>
+              <label className="label">N° commande</label>
+              <input className="input" value={editTask.orderNumber || ''} onChange={(e) => setEditTask({ ...editTask, orderNumber: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Client</label>
+              <input className="input" value={editTask.clientName || ''} onChange={(e) => setEditTask({ ...editTask, clientName: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Type</label>
+              <select className="input" value={editTask.type || 'traitement'} onChange={(e) => setEditTask({ ...editTask, type: e.target.value })}>
+                <option value="traitement">Traitement</option>
+                <option value="lavage_kg">Lavage (kg)</option>
+                <option value="sechage_kg">Séchage (kg)</option>
+                <option value="calandre">Calandre</option>
+                <option value="foltext">Foltext</option>
+              </select>
+            </div>
+            <div>
               <label className="label">Libellé</label>
-              <input
-                className="input"
-                value={editTask.label || ''}
-                onChange={(e) => setEditTask({ ...editTask, label: e.target.value })}
-              />
+              <input className="input" value={editTask.label || ''} onChange={(e) => setEditTask({ ...editTask, label: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Unité de saisie</label>
+              <select className="input" value={editTask.inputUnit || 'piece'} onChange={(e) => setEditTask({ ...editTask, inputUnit: e.target.value })}>
+                <option value="piece">Pièce</option>
+                <option value="kg">Kg</option>
+              </select>
             </div>
             <div>
               <label className="label">Statut</label>
-              <select
-                className="input"
-                value={editTask.status}
-                onChange={(e) => setEditTask({ ...editTask, status: e.target.value })}
-              >
+              <select className="input" value={editTask.status} onChange={(e) => setEditTask({ ...editTask, status: e.target.value })}>
                 <option value="todo">À faire</option>
                 <option value="doing">En cours</option>
                 <option value="done">Terminée</option>
               </select>
             </div>
             <div>
-              <label className="label">Notes</label>
-              <textarea
+              <label className="label">Date d&apos;échéance (veille)</label>
+              <input
                 className="input"
-                rows={2}
-                value={editTask.notes || ''}
-                onChange={(e) => setEditTask({ ...editTask, notes: e.target.value })}
+                type="datetime-local"
+                value={editTask.dueDate ? new Date(editTask.dueDate).toISOString().slice(0, 16) : ''}
+                onChange={(e) => setEditTask({ ...editTask, dueDate: e.target.value })}
               />
             </div>
+            <div>
+              <label className="label">Notes</label>
+              <textarea className="input" rows={2} value={editTask.notes || ''} onChange={(e) => setEditTask({ ...editTask, notes: e.target.value })} />
+            </div>
             <div className="flex gap-2">
-              <button type="button" className="btn-secondary flex-1" onClick={() => setEditTask(null)}>
-                Annuler
-              </button>
-              <button type="submit" className="btn-primary flex-1">
-                Enregistrer
-              </button>
+              <button type="button" className="btn-secondary flex-1" onClick={() => setEditTask(null)}>Annuler</button>
+              <button type="submit" className="btn-primary flex-1">Enregistrer</button>
             </div>
           </form>
         </div>
