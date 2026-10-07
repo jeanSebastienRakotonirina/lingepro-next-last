@@ -1,6 +1,9 @@
 import './globals.css';
 
 export const metadata = {
+  icons: {
+    icon: '/favicon.png',
+  },
   title: "Text'eau — Le nettoyage nature",
   description: 'Gestion de blanchisserie professionnelle',
 };
