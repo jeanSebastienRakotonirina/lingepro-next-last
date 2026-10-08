@@ -6,8 +6,8 @@ import Image from 'next/image';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('demo@lingepro.fr');
-  const [password, setPassword] = useState('Demo123!');
+  const [email, setEmail] = useState('contact@mimosa.fr');
+  const [password, setPassword] = useState('Cli123!');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
